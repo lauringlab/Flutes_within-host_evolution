@@ -1,0 +1,47 @@
+SAMPLES, = glob_wildcards('data/raw/{samples}_A.1.1.fastq.gz')
+
+
+rule all:
+    input:
+          expand ('data/aligned_output/coverage_consensus/{sample}_1.coverage_name', sample=SAMPLES),
+          expand ('data/aligned_output/coverage_consensus/{sample}_2.coverage_name', sample=SAMPLES),
+          expand ('data/aligned_output/coverage_consensus/{sample}_1.avg', sample=SAMPLES),
+          expand ('data/aligned_output/coverage_consensus/{sample}_2.avg', sample=SAMPLES),
+          'Coverage.all',
+          'AvgCoverage.all',
+
+rule add_name_coverage_1:
+     input:
+          inputA = 'data/aligned_output/coverage_consensus/{sample}_1.coverage.csv'
+
+     output:
+          sample1 = 'data/aligned_output/coverage_consensus/{sample}_1.coverage_name',
+          average1 = 'data/aligned_output/coverage_consensus/{sample}_1.avg'
+
+     script:
+          'coverage.R'
+
+rule add_name_coverage_2:
+     input:
+          inputA = 'data/aligned_output/coverage_consensus/{sample}_2.coverage.csv'
+
+     output:
+          sample1 = 'data/aligned_output/coverage_consensus/{sample}_2.coverage_name',
+          average1 = 'data/aligned_output/coverage_consensus/{sample}_2.avg'
+
+     script:
+          'coverage.R'
+
+rule collapse_files:
+     input:
+         A = expand ('data/aligned_output/coverage_consensus/{sample}_{rep}.coverage_name', sample=SAMPLES, rep=["1", "2"]),
+         B = expand ('data/aligned_output/coverage_consensus/{sample}_{rep}.avg', sample=SAMPLES, rep=["1", "2"])
+     output:
+          A = "Coverage.all",
+          B = "AvgCoverage.all"
+
+     shell:
+          """
+          awk 'NR == 1 || FNR > 1'  {input.A}  >  {output.A}
+          awk 'NR == 1 || FNR > 1'  {input.B} > {output.B}
+          """

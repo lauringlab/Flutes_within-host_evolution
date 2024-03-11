@@ -1,0 +1,2 @@
+hhsubid_pos,mean_s,mean_lower_95,mean_upper_95,minus_sd_s,minus_sd_lower_95,minus_sd_upper_95,plus_sd_s,plus_sd_lower_95,plus_sd_upper_95,mean_pos_selection,minus_sd_pos_selection,plus_sd_pos_selection,subtype,REGION,POS,mutation_type,initial_mutation,concat.pos
+1808203-HA-620,0.443301863,0.353033,0.499918,0.442088456000001,0.341638,0.499941,0.448948933,0.341638,0.499941,TRUE,TRUE,TRUE,FluAH3,HA,620,Syn,HA_T620C,7535

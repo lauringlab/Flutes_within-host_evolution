@@ -1,0 +1,12 @@
+PB2	Genbank	CDS	28	2307	.	+	0	ID=cds-PB2
+PB1	Genbank	CDS	25	2298	.	+	0	ID=cds-PB1
+PA	Genbank	CDS	25	2175	.	+	0	ID=cds-PA
+HA	Genbank	CDS	33	1733	.	+	0	ID=cds-HA
+NP	Genbank	CDS	46	1542	.	+	0	ID=cds-NP
+NA_	Genbank	CDS	21	1430	.	+	0	ID=cds-NA_
+M	Genbank	CDS	26	51	.	+	0	ID=cds-M2
+M	Genbank	CDS	740	1007	.	+	1	ID=cds-M2
+M	Genbank	CDS	26	784	.	+	0	ID=cds-M1
+NS	Genbank	CDS	27	56	.	+	0	ID=cds-NS_NEP
+NS	Genbank	CDS	529	864	.	+	0	ID=cds-NS_NEP
+NS	Genbank	CDS	27	686	.	+	0	ID=cds-NS1

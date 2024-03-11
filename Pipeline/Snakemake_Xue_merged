@@ -1,0 +1,452 @@
+### Author: Emily Bendall - modified from Andrew Valesano
+### Purpose: Get variant calls from alignment files  with iVar.
+### This is designed for using the IAV influenza sequenced on Illumina.
+
+### filtering
+	## minimum mapq of 20 and  minimum Phred score of 30
+	## minimum read depth of 400
+	## pvalue < 10e-5
+	## SNV only- no indels
+	## minimumum frequency of 0.0025 in both samples and at 0.005 in at least  one sample
+	
+# ============================= How to run this pipeline ==========================
+
+
+
+# 1. Modify the parameters below as needed ("rule parameters").
+# 2. Load modules: module load Bioinformatics ivar python2.7-anaconda/2019.03 samtools fastqc bowtie2/2.1.0 picard-tools bwa bedtools2 R
+# 3. Activate snakemake: conda activate snakemake
+# 4. Run job on Slurm: sbatch submit_variants.sbat -- Or run directly: snakemake -s Snakefile-var -p --latency-wait 30 --cores 2
+
+
+# ============================= Configure run options here =============================
+
+SAMPLES, = glob_wildcards('data/raw/{samples}_B.1.1.fastq.gz')
+
+rule all:
+    input:
+        expand ('data/aligned_output/align/{sample}_1.sam', sample=SAMPLES),
+        #expand ('data/aligned_output/align/{sample}_2.sam', sample=SAMPLES),
+    	#expand ('data/ivar_output/{sample}.filtered', sample=SAMPLES),
+        #expand ('data/ivar_output/{sample}.merged.tsv', sample=SAMPLES)
+        #expand ("data/aligned_output/fastqc/{sample}_1_1.trimmed_fastqc.zip",sample=SAMPLES),
+        #expand ("data/aligned_output/fastqc/{sample}_1_2.trimmed_fastqc.zip",sample=SAMPLES),
+        #expand ("data/aligned_output/fastqc/{sample}_2_1.trimmed_fastqc.zip",sample=SAMPLES),
+        #expand ("data/aligned_output/fastqc/{sample}_2_2.trimmed_fastqc.zip", sample=SAMPLES),
+        expand ('data/Xue_merged/coverage_consensus/{sample}_1.coverage.csv', sample=SAMPLES),
+        #expand ('data/aligned_output/coverage/{sample}_2.coverage.csv', sample=SAMPLES),
+	#expand ('data/aligned_output/coverage_with_dup/{sample}_1.coverage.csv', sample=SAMPLES),
+	#expand ('data/Xue_merged/coverage_with_dup/{sample}_2.coverage.csv', sample=SAMPLES),
+        expand ('data/Xue_merged/consensus_sequence/{sample}.fa', sample=SAMPLES),
+        expand ('data/Xue_merged/consensus_sequence/{sample}.fa.fai', sample=SAMPLES),
+        expand ('data/Xue_merged/consensus_sequence/{sample}.1.bt2', sample=SAMPLES),
+        expand ('data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bam', sample=SAMPLES),
+        "data/Xue_merged/all_variants_filtered"
+       
+rule parameters: 
+    params:
+        reference_fasta = 'data/reference/Singapore16_PlasmidControl.fa', # fasta used for alignment
+        reference_index = 'data/reference/Singapore16_PC', # bowtie2-build used for alignment. Should be a build of reference_fasta
+        name = 'testrun', # Goes into the coverage.csv output file for tracking
+        min_qual_score = 30, # minimum quality score used in iVar consensus
+        freq_threshold = 0.0025, # frequency threshold value used in iVar consensus. See documentation.
+        cutadapt_seq_fwd = 'CTGTCTCTTATACACATCT', # sequence used for adapter trimming. This is NEBnext (same as TruSeq). Nextera adapter sequence, forward and reverse: CTGTCTCTTATACACATCT
+        cutadapt_seq_rev = 'CTGTCTCTTATACACATCT',
+        bowtie_option = '--very-sensitive-local', # bowtie2 mapping option
+        min_mapQ=20,
+        reference_gff = 'data/reference/Singapore_16_v4.gff', #used to designate open reading frame	
+         
+setup = rules.parameters.params
+    
+# ============================= Here are the pipeline rules =============================
+
+rule cutadapt:
+    message:
+        '''
+        =======================================================
+        Trim sequencing adapters with cutadapt
+        =======================================================
+        '''
+    input:
+        reads_1_in = 'data/raw/{sample}_A.1.1.fastq.gz',
+        reads_2_in = 'data/raw/{sample}_A.2.1.fastq.gz',
+        reads_3_in = 'data/raw/{sample}_B.1.1.fastq.gz',
+        reads_4_in = 'data/raw/{sample}_B.2.1.fastq.gz'
+    output:
+        reads_1_out = 'data/aligned_output/cutadapt/{sample}_1_1.trimmed.fastq',
+        reads_2_out = 'data/aligned_output/cutadapt/{sample}_1_2.trimmed.fastq',
+        reads_3_out = 'data/aligned_output/cutadapt/{sample}_2_1.trimmed.fastq',
+        reads_4_out = 'data/aligned_output/cutadapt/{sample}_2_2.trimmed.fastq'
+   # conda:
+        #'/home/bendalle/miniconda3/envs/ivar.yml'
+    log:
+       log1 =  'data/aligned_output/cutadapt/{sample}_1.log',
+       log2 =  'data/aligned_output/cutadapt/{sample}_2.log'
+    shell:
+        '''
+        cutadapt -a {setup.cutadapt_seq_fwd} -A {setup.cutadapt_seq_rev} -q 25 -m 20 \
+            -o {output.reads_1_out} -p {output.reads_2_out} \
+            {input.reads_1_in} {input.reads_2_in} \
+            > {log.log1}
+        cutadapt -a {setup.cutadapt_seq_fwd} -A {setup.cutadapt_seq_rev} -q 25 -m 20 \
+            -o {output.reads_3_out} -p {output.reads_4_out} \
+            {input.reads_3_in} {input.reads_4_in} \
+            > {log.log2}
+        '''
+
+rule fastqc:
+    message:
+        """
+        =======================================================
+        Run FastQC
+        =======================================================
+        """
+    input:
+        reads_1_in = "data/aligned_output/cutadapt/{sample}_1_1.trimmed.fastq",
+        reads_2_in = "data/aligned_output/cutadapt/{sample}_1_2.trimmed.fastq",
+        reads_3_in = "data/aligned_output/cutadapt/{sample}_2_1.trimmed.fastq",
+        reads_4_in = "data/aligned_output/cutadapt/{sample}_2_2.trimmed.fastq"
+    output:
+        "data/aligned_output/fastqc/{sample}_1_1.trimmed_fastqc.zip",
+        "data/aligned_output/fastqc/{sample}_1_2.trimmed_fastqc.zip",
+        "data/aligned_output/fastqc/{sample}_2_1.trimmed_fastqc.zip",
+        "data/aligned_output/fastqc/{sample}_2_2.trimmed_fastqc.zip"
+    run:
+        shell("fastqc -o data/aligned_output/fastqc --noextract -f fastq {input.reads_1_in}")
+        shell("fastqc -o data/aligned_output/fastqc --noextract -f fastq {input.reads_2_in}")
+        shell("fastqc -o data/aligned_output/fastqc --noextract -f fastq {input.reads_3_in}")
+        shell("fastqc -o data/aligned_output/fastqc --noextract -f fastq {input.reads_4_in}")
+
+rule bowtie_virus:
+    message:
+        """
+        =======================================================
+        Map reads with bowtie2
+        =======================================================
+        """
+    input:
+        reads_1_in = 'data/aligned_output/cutadapt/{sample}_1_1.trimmed.fastq', 
+        reads_2_in = 'data/aligned_output/cutadapt/{sample}_1_2.trimmed.fastq',
+        reads_3_in = 'data/aligned_output/cutadapt/{sample}_2_1.trimmed.fastq', 
+        reads_4_in = 'data/aligned_output/cutadapt/{sample}_2_2.trimmed.fastq'
+
+    output:
+        output1 = 'data/aligned_output/align/{sample}_1.sam',
+        output2 = 'data/aligned_output/align/{sample}_2.sam'
+    #conda:
+        #'/home/bendalle/miniconda3/envs/ivar.yml'
+    log:
+        log1 = 'data/aligned_output/align/{sample}_1.log',
+        log2 = 'data/aligned_output/align/{sample}_2.log'
+    shell:
+        """
+        bowtie2 --seed 42 --very-sensitive-local -x {setup.reference_index} -1 {input.reads_1_in} -2 {input.reads_2_in} -S {output.output1} 2> {log.log1}
+        bowtie2 --seed 42 --very-sensitive-local -x {setup.reference_index} -1 {input.reads_3_in} -2 {input.reads_4_in} -S {output.output2} 2> {log.log2}
+        """
+
+rule sort_to_bam:
+    message:
+        """
+        =======================================================
+        Sort SAM and convert to BAM
+        =======================================================
+        """
+    input:
+        inputA = 'data/aligned_output/align/{sample}_1.sam',
+        inputB = 'data/aligned_output/align/{sample}_2.sam'
+    output:
+        bamA = 'data/aligned_output/align/{sample}_1.bam',
+        #baiA = 'data/aligned_output/align/{sample}_1.bai',
+        bamB = 'data/aligned_output/align/{sample}_2.bam',
+        #baiB = 'data/aligned_output/align/{sample}_2.bai'
+   # conda:
+       # '/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        """
+        samtools sort -o {output.bamA} {input.inputA} 
+        samtools sort -o {output.bamB} {input.inputB} 
+        """
+        
+rule remove_duplicates:
+    message:
+        """
+        =======================================================
+        Remove duplicates with Picard
+        =======================================================
+        """
+    input:
+        inputA = 'data/aligned_output/align/{sample}_1.bam',
+        inputB = 'data/aligned_output/align/{sample}_2.bam'
+    output:
+        bamA = 'data/aligned_output/removed_duplicates/{sample}_1.removed.bam',
+        baiA = 'data/aligned_output/removed_duplicates/{sample}_1.removed.bai',
+        metricsA = 'data/aligned_output/removed_duplicates/{sample}_1.removed.bam-picard.out.metrics',
+        bamB = 'data/aligned_output/removed_duplicates/{sample}_2.removed.bam',
+        baiB = 'data/aligned_output/removed_duplicates/{sample}_2.removed.bai',
+        metricsB = 'data/aligned_output/removed_duplicates/{sample}_2.removed.bam-picard.out.metrics'
+    #conda:
+        #'/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        """
+        PicardCommandLine MarkDuplicates INPUT={input.inputA} OUTPUT={output.bamA} REMOVE_DUPLICATES=true CREATE_INDEX=true VALIDATION_STRINGENCY=LENIENT METRICS_FILE={output.metricsA}
+        PicardCommandLine MarkDuplicates INPUT={input.inputB} OUTPUT={output.bamB} REMOVE_DUPLICATES=true CREATE_INDEX=true VALIDATION_STRINGENCY=LENIENT METRICS_FILE={output.metricsB}
+        """
+rule get_coverage:
+     message:
+        """
+        =======================================================
+        Get coverage with samtools
+        =======================================================
+        """
+     input:
+         inputA = 'data/aligned_output/removed_duplicates/{sample}_1.removed.bam',
+         inputB = 'data/aligned_output/removed_duplicates/{sample}_2.removed.bam'
+     output:
+         outputA = 'data/aligned_output/coverage/{sample}_1.coverage.csv',
+         outputB = 'data/aligned_output/coverage/{sample}_2.coverage.csv'
+     shell:
+         """
+         samtools depth -a -d 100000 {input.inputA} > {output.outputA}
+         samtools depth -a -d 100000 {input.inputB} > {output.outputB}
+         """
+
+rule get_coverage_with_dup:
+     message:
+        """
+        =======================================================
+        Get coverage with samtools with duplicate reads
+        =======================================================
+        """
+     input:
+         inputA = 'data/aligned_output/align/{sample}_1.bam',
+         inputB = 'data/aligned_output/align/{sample}_2.bam'
+     output:
+         outputA = 'data/aligned_output/coverage_with_dup/{sample}_1.coverage.csv',
+         outputB = 'data/aligned_output/coverage_with_dup/{sample}_2.coverage.csv'
+     shell:
+         """
+         samtools depth -a {input.inputA} > {output.outputA}
+         samtools depth -a {input.inputB} > {output.outputB}
+         """
+         
+rule consensus_sequence:
+    message:
+        """
+        =======================================================
+        Get consensus Sequence with iVar
+        =======================================================
+        """
+    input:
+        inputA = 'data/aligned_output/removed_duplicates/{sample}_1.removed.bam',
+        inputB = 'data/aligned_output/removed_duplicates/{sample}_2.removed.bam'   
+    output:
+        summary = 'data/Xue_merged/consensus_sequence/{sample}.summary',
+        fa = 'data/Xue_merged/consensus_sequence/{sample}.fa',
+        merged = 'data/Xue_merged/consensus_sequence/{sample}_merged.bam'
+    
+    shell:
+        """
+        samtools merge  {output.merged} {input.inputA} {input.inputB} 
+        ./SummarizeBAM  -i <(samtools view {output.merged}) -f {setup.reference_fasta} -o {output.summary} -s {output.fa} -Q {setup.min_qual_score}
+        
+        """
+
+rule bowtie2_build:
+    message:
+        """
+        =======================================================
+        index consensus sequence with bowtie2 build and Faidx
+        =======================================================
+        """
+    input:
+        'data/Xue_merged/consensus_sequence/{sample}.fa'  
+    output:
+        'data/Xue_merged/consensus_sequence/{sample}.1.bt2',
+        'data/Xue_merged/consensus_sequence/{sample}.2.bt2',
+        'data/Xue_merged/consensus_sequence/{sample}.3.bt2',	
+        'data/Xue_merged/consensus_sequence/{sample}.4.bt2',
+        'data/Xue_merged/consensus_sequence/{sample}.rev.1.bt2', 
+        'data/Xue_merged/consensus_sequence/{sample}.rev.2.bt2',
+        'data/Xue_merged/consensus_sequence/{sample}.fa.fai'
+    params:
+        'data/Xue_merged/consensus_sequence/{sample}'
+    shell:
+        """
+        bowtie2-build {input} {params}
+        samtools faidx {input}
+        """
+
+rule align_to_consensus: 
+    message:
+        """
+        =======================================================
+        Map reads with bowtie2 to Consensus
+        =======================================================
+        """
+    input:
+    	#reference = 'data/aligned_output/consensus_sequence/{sample}.fasta', 
+        reads_1_in = 'data/aligned_output/cutadapt/{sample}_1_1.trimmed.fastq', 
+        reads_2_in = 'data/aligned_output/cutadapt/{sample}_1_2.trimmed.fastq',
+        reads_3_in = 'data/aligned_output/cutadapt/{sample}_2_1.trimmed.fastq', 
+        reads_4_in = 'data/aligned_output/cutadapt/{sample}_2_2.trimmed.fastq'
+
+    output:
+        output1 = 'data/Xue_merged/align_consensus/{sample}_1.sam',
+        output2 = 'data/Xue_merged/align_consensus/{sample}_2.sam'
+    params:
+        reference = 'data/Xue_merged/consensus_sequence/{sample}'
+#conda:
+        #'/home/bendalle/miniconda3/envs/ivar.yml'
+    log:
+        log1 = 'data/Xue_merged/align_consensus/{sample}_1.log',
+        log2 = 'data/Xue_merged/align_consensus/{sample}_2.log'
+    shell:
+        """
+        bowtie2 --seed 42 --very-sensitive-local -x {params} -1 {input.reads_1_in} -2 {input.reads_2_in} -S {output.output1} 2> {log.log1}
+        bowtie2 --seed 42 --very-sensitive-local -x {params} -1 {input.reads_3_in} -2 {input.reads_4_in} -S {output.output2} 2> {log.log2}
+        """
+
+rule sort_to_bam_consensus:
+    message:
+        """
+        =======================================================
+        Sort SAM and convert to BAM for  consensus aligned
+        =======================================================
+        """
+    input:
+        inputA = 'data/Xue_merged/align_consensus/{sample}_1.sam',
+        inputB = 'data/Xue_merged/align_consensus/{sample}_2.sam'
+    output:
+        bamA = 'data/Xue_merged/align_consensus/{sample}_1.bam',
+        #baiA = 'data/Xue_merged/align_consensus/{sample}_1.bai',
+        bamB = 'data/Xue_merged/align_consensus/{sample}_2.bam',
+       # baiB = 'data/Xue_merged/align_consensus/{sample}_2.bai'
+   # conda:
+       # '/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        """
+        samtools sort -o {output.bamA} {input.inputA} 
+        samtools sort -o {output.bamB} {input.inputB}
+        """
+rule remove_duplicates_consensus:
+    message:
+        """
+        =======================================================
+        Remove duplicates with Picard from Consensus aligned 
+        =======================================================
+        """
+    input:
+        inputA = 'data/Xue_merged/align_consensus/{sample}_1.bam',
+        inputB = 'data/Xue_merged/align_consensus/{sample}_2.bam'
+    output:
+        bamA = 'data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bam',
+        baiA = 'data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bai',
+        metricsA = 'data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bam-picard.out.metrics',
+        bamB = 'data/Xue_merged/removed_duplicates_consensus/{sample}_2.removed.bam',
+        baiB = 'data/Xue_merged/removed_duplicates_consensus/{sample}_2.removed.bai',
+        metricsB = 'data/Xue_merged/removed_duplicates_consensus/{sample}_2.removed.bam-picard.out.metrics'
+    #conda:
+        #'/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        """
+        PicardCommandLine MarkDuplicates INPUT={input.inputA} OUTPUT={output.bamA} REMOVE_DUPLICATES=true CREATE_INDEX=true VALIDATION_STRINGENCY=LENIENT METRICS_FILE={output.metricsA}
+        PicardCommandLine MarkDuplicates INPUT={input.inputB} OUTPUT={output.bamB} REMOVE_DUPLICATES=true CREATE_INDEX=true VALIDATION_STRINGENCY=LENIENT METRICS_FILE={output.metricsB}
+        """
+
+rule get_coverage_consensus:
+     message:
+        """
+        =======================================================
+        Get coverage with samtools
+        =======================================================
+        """
+     input:
+         inputA = 'data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bam',
+         inputB = 'data/Xue_merged/removed_duplicates_consensus/{sample}_2.removed.bam'
+     output:
+         outputA = 'data/Xue_merged/coverage_consensus/{sample}_1.coverage.csv',
+         outputB = 'data/Xue_merged/coverage_consensus/{sample}_2.coverage.csv'
+     shell:
+         """
+         samtools depth -a -d 100000 {input.inputA} > {output.outputA}
+         samtools depth -a -d 100000 {input.inputB} > {output.outputB}
+         """
+
+rule call_variants:
+    message:
+        """
+        =======================================================
+        Call variants with iVar
+        =======================================================
+        """
+    input:
+    	reference = 'data/Xue_merged/consensus_sequence/{sample}.fa', 
+        inputA = 'data/Xue_merged/removed_duplicates_consensus/{sample}_1.removed.bam',
+        inputB = 'data/Xue_merged/removed_duplicates_consensus/{sample}_2.removed.bam'
+    output:
+        outputA = 'data/Xue_merged/ivar_output/{sample}_1.variants.tsv',
+        outputB = 'data/Xue_merged/ivar_output/{sample}_2.variants.tsv'
+    params:
+        ivar_outA = 'data/Xue_merged/ivar_output/{sample}_1.variants',
+        ivar_outB = 'data/Xue_merged/ivar_output/{sample}_2.variants'
+    #conda:
+       # '/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        """
+        samtools mpileup -aa -A -d 100000 -B -Q 0 -q {setup.min_mapQ} --reference {input.reference} {input.inputA} | ivar variants -p {params.ivar_outA} -q {setup.min_qual_score} -t {setup.freq_threshold} -r {input.reference} -g {setup.reference_gff} 
+        samtools mpileup -aa -A -d 100000 -B -Q 0 -q {setup.min_mapQ} --reference {input.reference} {input.inputB} | ivar variants -p {params.ivar_outB} -q {setup.min_qual_score} -t {setup.freq_threshold} -r {input.reference} -g {setup.reference_gff}
+        """
+
+rule merge_variants: 
+    message:
+        """
+        =======================================================
+        Merge duplicate sequencing run variants with iVar
+        =======================================================
+        """      
+    input:
+        sample1 = 'data/Xue_merged/ivar_output/{sample}_1.variants.tsv',
+        sample2 = 'data/Xue_merged/ivar_output/{sample}_2.variants.tsv'
+    output:
+        'data/Xue_merged/ivar_output/{sample}.merged.tsv'
+    params: 
+        'data/Xue_merged/ivar_output/{sample}.merged'
+    #conda:
+       # '/home/bendalle/miniconda3/envs/ivar.yml'
+    shell:
+        'ivar filtervariants -p  {params} {input.sample1} {input.sample2}'
+
+rule filter_variants:
+    message:
+         """
+        =======================================================
+        Filter variants in R 
+        =======================================================
+        """
+    input:
+        sample= "data/Xue_merged/ivar_output/{sample}.merged.tsv",
+        reference = setup.reference_fasta
+    output:
+        "data/Xue_merged/ivar_output/{sample}.filtered"
+    script:
+        "filter_ivar_IAV_xue.R"
+
+rule collapse_all_variants:
+     message:
+         """
+          =======================================================
+          Collapse variants from all samples into one file
+          =======================================================
+         """
+
+     input:
+          expand ("data/Xue_merged/ivar_output/{sample}.filtered", sample=SAMPLES)
+        
+     output:
+          "data/Xue_merged/all_variants_filtered"
+          
+     shell:
+          """          
+          awk 'NR == 1 || FNR > 1'  {input}  >  {output}
+          """
+
