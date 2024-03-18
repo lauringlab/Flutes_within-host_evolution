@@ -1,0 +1,41 @@
+SAMPLES, = glob_wildcards('FluAH1N1/{samples}_names.csv')
+
+rule all:
+    input:
+        expand ('Result/WFABC/FluAH1N1/Actual_depth/Results/Mean_Ne/{sample}_posterior_s.txt', sample=SAMPLES)
+        
+rule cat:
+     input:
+        data ='Result/WFABC/FluAH1N1/{sample}.txt',
+        header = 'Result/WFABC/FluAH1N1/{sample}_header.txt'
+     output: 
+        full_input = 'Result/WFABC/FluAH1N1/input_files/{sample}.txt',
+     shell:
+        """
+        cat {input.header} {input.data} > {output.full_input}
+        """
+rule selection:
+     input:'Result/WFABC/FluAH1N1/input_files/{sample}.txt',
+        
+     output:'Result/WFABC/FluAH1N1/input_files/{sample}_posterior_s.txt', 'Result/WFABC/FluAH1N1/input_files/{sample}_obs_stats.txt'
+          
+     shell:
+        """
+        WFABC_v1.1/binaries/Linux/wfabc_1 -nboots 0 {input}
+        WFABC_v1.1/binaries/Linux/wfabc_2 -ploidy 1 -fixed_N 176  -min_s -0.5 -max_s 0.5 -min_freq 0.005 {input}
+        """
+		
+rule organize:
+     input:
+        input_1 = 'Result/WFABC/FluAH1N1/input_files/{sample}_posterior_s.txt',
+        input_2 = 'Result/WFABC/FluAH1N1/input_files/{sample}_obs_stats.txt'
+     output:
+        output_1 = 'Result/WFABC/FluAH1N1/Results/Mean_Ne/{sample}_posterior_s.txt', 
+        output_2 = 'Result/WFABC/FluAH1N1/Results/Mean_Ne/{sample}_obs_stats.tx
+          
+     shell:
+        """
+        mv {input.input_1} {output.output_1}
+        mv {input.input_2} {output.output_2}
+        """
+        

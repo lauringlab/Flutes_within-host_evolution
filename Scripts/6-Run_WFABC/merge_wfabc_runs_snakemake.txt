@@ -1,0 +1,80 @@
+SAMPLES_H1N1, = glob_wildcards('Results/WFABC/FluAH1N1/{samples_h1n1}_names.csv'),
+SAMPLES_H3N2, = glob_wildcards('Results/WFABC/FluAH3/{samples_h3n2}_names.csv')
+
+rule all:
+    input:
+         expand ("Results/WFABC/FluAH1N1/merged/{sample_h1n1}_merged_s.csv", sample_h1n1=SAMPLES_H1N1),
+         expand ("Results/WFABC/FluAH3/merged/{sample_h3n2}_merged_s.csv", sample_h3n2=SAMPLES_H3N2), 
+         "Results/WFABC/FluAH1N1/H1N1_selection_coefficients.csv",
+         "Results/WFABC/FluAH3/H3N2_selection_coefficients.csv"
+         
+
+rule merge_ne_runs_h1n1:
+     message:
+         """
+          =======================================================
+          merge selection estimates from different Nes 
+          =======================================================
+         """
+     input:
+        mean_Ne = 'Results/WFABC/FluAH1N1/Results/Mean_Ne/{sample_h1n1}_posterior_s.txt',
+        minus_sd_Ne = 'Results/WFABC/FluAH1N1/Results/Neg_95_Ne/{sample_h1n1}_posterior_s.txt', 
+        plus_sd_Ne = 'Results/WFABC/FluAH1N1/Results/Pos_95_Ne/{sample_h1n1}_posterior_s.txt',
+        names = '.Results/WFABC/FluAH1N1/Results/{sample_h1n1}_names.csv'
+        
+     output:
+    	"Results/WFABC/FluAH1N1/merged/{sample_h1n1}_merged_s.csv"
+    	
+     script:
+        "wfabc_merge_Ne_runs.R"
+        
+rule merge_ne_runs_h3n2:
+     message:
+         """
+          =======================================================
+          merge selection estimates from different Nes 
+          =======================================================
+         """
+     input:
+        mean_Ne = 'Results/WFABC/FluAH3/Results/Mean_Ne/{sample_h3n2}_posterior_s.txt',
+        minus_sd_Ne = 'Results/WFABC/FluAH3/Results/Neg_95_Ne/{sample_h3n2}_posterior_s.txt', 
+        plus_sd_Ne = 'Results/WFABC/FluAH3/Results/Pos_95_Ne/{sample_h3n2}_posterior_s.txt',
+        names = 'Results/WFABC/FluAH3/{sample_h3n2}_names.csv'
+        
+     output:
+    	"Results/WFABC/FluAH3/merged/{sample_h3n2}_merged_s.csv"
+    	
+     script:
+        "wfabc_merge_Ne_runs.R"
+        
+rule concatenate_H3N2:
+     message:
+         """
+          =======================================================
+          concat samples 
+          =======================================================
+         """
+     input:
+          expand ("Results/WFABC/FluAH3/{sample_h3n2}_names.csv", sample_h3n2=SAMPLES_H3N2)
+        
+     output:
+          "Results/WFABC/FluAH3/H3N2_selection_coefficients.csv"
+     
+     shell:
+          "awk 'NR == 1 || FNR > 1'  {input}  >  {output}"
+
+rule concatenate_H1N1:
+     message:
+         """
+          =======================================================
+          concat samples 
+          =======================================================
+         """
+     input:
+          expand ("Results/WFABC/FluAH1N1/{sample_h1n1}_names.csv", sample_h1n1=SAMPLES_H1N1)
+        
+     output:
+          "Results/WFABC/FluAH1N1/H1N1_selection_coefficients.csv"
+     
+     shell:
+          "awk 'NR == 1 || FNR > 1'  {input}  >  {output}"
