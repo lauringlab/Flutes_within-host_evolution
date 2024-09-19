@@ -8,7 +8,7 @@ The directory is organized as follows:
 
 **Processed_data/Secondary_processing** This file contains the variant file generated from ivar with associated metadata. The variants have been fully filtered and is the input file for all downstram analyses
 
-**References** - This folder contains the reference sequence and gff file for each seasons (2017/18 - 2019/20) vaccine strain. Note that the references include the universal IAV priming sites. Downstream variant files use these reference coordinants. It also includes files used in the divergent rate calculations.  
+**References** - This folder contains the reference sequence and gff file for each seasons (2017/18 - 2019/20) vaccine strain. Note that the references include the universal IAV priming sites. Downstream variant files use these reference coordinants. It also includes files used in the divergence rate calculations.  
 
 **Metadata** - This folder contains metadata for all specimens. The "Definitions.xlsx" file contains the definitions for the variable columns. 
 
